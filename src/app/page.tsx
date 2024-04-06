@@ -1,113 +1,133 @@
-import Image from "next/image";
+"use client";
+
+import { TxBuilder } from "@morpho-labs/gnosis-tx-builder";
+import { ChangeEvent, useState } from "react";
+import Papa from "papaparse";
+import { Contract, parseEther } from "ethers";
+import { BatchFile } from "@morpho-labs/gnosis-tx-builder/lib/src/types";
+
+const safeAddress = "0xaA53161A1fD22b258c89bA76B4bA11019034612D";
+
+const newErc20Contract = (contractAddress: string) =>
+  new Contract(contractAddress, [
+    "function transfer(address to, uint amount) returns (bool)",
+  ]);
+
+const buildData = (
+  erc20Address: string,
+  recipientAddress: string,
+  baseAmount: string
+) => {
+  const unitAmount = parseEther(baseAmount);
+  const data = newErc20Contract(erc20Address).interface.encodeFunctionData(
+    "transfer",
+    [recipientAddress, unitAmount]
+  );
+  return data;
+};
+
+const buildNativeTransaction = (recipientAddress: string, value: string) => ({
+  to: recipientAddress,
+  value: parseEther(value).toString(),
+});
+
+const buildERC20Transaction = (
+  erc20Address: string,
+  recipientAddress: string,
+  amount: string
+) => ({
+  to: erc20Address,
+  value: "0",
+  data: buildData(erc20Address, recipientAddress, amount),
+});
+
+const parse = (csv: string) => {
+  const headerDetected = !csv.startsWith("0x");
+  const { data } = Papa.parse<[string, string]>(csv, { skipEmptyLines: true });
+  if (headerDetected) data.shift();
+  return data;
+};
+
+const buildTransactions = (erc20Address: string, rows: [string, string][]) => {
+  if (erc20Address) {
+    return rows.map(([recipientAddress, amount]) =>
+      buildERC20Transaction(erc20Address, recipientAddress, amount)
+    );
+  }
+  return rows.map(([recipientAddress, amount]) =>
+    buildNativeTransaction(recipientAddress, amount)
+  );
+};
+
+const createBatchJson = (file: File, erc20Address: string) => {
+  const reader = new FileReader();
+
+  return new Promise<BatchFile>((resolve, reject) => {
+    reader.onload = (e) => {
+      if (!e.target) {
+        reject("err: no target");
+        return;
+      }
+
+      const result = e.target.result;
+      if (typeof result !== "string") {
+        reject("err: not a string");
+        return;
+      }
+
+      const rows = parse(result);
+      const transactions = buildTransactions(erc20Address, rows);
+
+      const batchJson = TxBuilder.batch(safeAddress, transactions, {
+        chainId: 13371,
+      });
+
+      resolve(batchJson);
+    };
+
+    reader.readAsText(file);
+  });
+};
 
 export default function Home() {
+  const [batchFile, setBatchFile] = useState("");
+  const [csvFile, setCsvFile] = useState<File | null>();
+  const [erc20Address, setErc20Address] = useState("");
+
+  const handleErc20AddressChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setErc20Address(e.target.value);
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    setCsvFile(e.target.files[0]);
+  };
+
+  const handleClick = () => {
+    if (!csvFile) return;
+    createBatchJson(csvFile, erc20Address).then((file) =>
+      setBatchFile(JSON.stringify(file, null, 2))
+    );
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
-
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-full sm:before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full sm:after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50 text-balance`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
+    <main className="flex min-h-screen flex-col justify-between p-4 gap-4">
+      <label>ERC20 Address (blank for native IMX)</label>
+      <input
+        type="text"
+        placeholder="0x"
+        onChange={handleErc20AddressChange}
+        className="w-full"
+      />
+      <input onChange={handleFileChange} type="file" accept="text/csv" />
+      <textarea rows={20} className="w-full" value={batchFile} />
+      <button
+        disabled={!csvFile}
+        onClick={handleClick}
+        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+      >
+        Transform
+      </button>
     </main>
   );
 }
