@@ -119,6 +119,7 @@ export default function Home() {
         onChange={handleErc20AddressChange}
         className="w-full"
       />
+      <label>CSV of the form: walletAddress,amount</label>
       <input onChange={handleFileChange} type="file" accept="text/csv" />
       <textarea rows={20} className="w-full" value={batchFile} />
       <button
