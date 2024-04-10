@@ -90,7 +90,6 @@ const createBatchJson = (file: File, erc20Address: string) => {
 };
 
 export default function Home() {
-  const [batchFile, setBatchFile] = useState("");
   const [csvFile, setCsvFile] = useState<File | null>();
   const [erc20Address, setErc20Address] = useState("");
 
@@ -105,13 +104,23 @@ export default function Home() {
 
   const handleClick = () => {
     if (!csvFile) return;
-    createBatchJson(csvFile, erc20Address).then((file) =>
-      setBatchFile(JSON.stringify(file, null, 2))
-    );
+    createBatchJson(csvFile, erc20Address).then((file) => {
+      const blob = decodeURIComponent(encodeURIComponent(JSON.stringify(file, null, 2)));
+      const url = window.URL.createObjectURL(new Blob([blob]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "batch.json";
+      document.body.appendChild(link);
+
+      link.click();
+
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+  });
   };
 
   return (
-    <main className="flex min-h-screen flex-col justify-between p-4 gap-4">
+    <main className="flex min-h-screen max-w-96 flex-col p-4 gap-4">
       <label>ERC20 Address (blank for native IMX)</label>
       <input
         type="text"
@@ -121,7 +130,6 @@ export default function Home() {
       />
       <label>CSV of the form: walletAddress,amount</label>
       <input onChange={handleFileChange} type="file" accept="text/csv" />
-      <textarea rows={20} className="w-full" value={batchFile} />
       <button
         disabled={!csvFile}
         onClick={handleClick}
