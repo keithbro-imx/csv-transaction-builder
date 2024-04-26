@@ -3,28 +3,10 @@
 import { TxBuilder } from "@morpho-labs/gnosis-tx-builder";
 import { ChangeEvent, useState } from "react";
 import Papa from "papaparse";
-import { Contract, parseEther } from "ethers";
-import { BatchFile } from "@morpho-labs/gnosis-tx-builder/lib/src/types";
+import { parseEther } from "ethers";
+import { BatchFile, BatchTransaction } from "@morpho-labs/gnosis-tx-builder/lib/src/types";
 
 const safeAddress = "0xaA53161A1fD22b258c89bA76B4bA11019034612D";
-
-const newErc20Contract = (contractAddress: string) =>
-  new Contract(contractAddress, [
-    "function transfer(address to, uint amount) returns (bool)",
-  ]);
-
-const buildData = (
-  erc20Address: string,
-  recipientAddress: string,
-  baseAmount: string
-) => {
-  const unitAmount = parseEther(baseAmount);
-  const data = newErc20Contract(erc20Address).interface.encodeFunctionData(
-    "transfer",
-    [recipientAddress, unitAmount]
-  );
-  return data;
-};
 
 const buildNativeTransaction = (recipientAddress: string, value: string) => ({
   to: recipientAddress,
@@ -35,10 +17,29 @@ const buildERC20Transaction = (
   erc20Address: string,
   recipientAddress: string,
   amount: string
-) => ({
+): BatchTransaction => ({
   to: erc20Address,
   value: "0",
-  data: buildData(erc20Address, recipientAddress, amount),
+  contractMethod: {
+    name: "transfer",
+    inputs: [
+      {
+        internalType: "address",
+        name: "to",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+    ],
+    payable: false,
+  },
+  contractInputsValues: {
+    to: recipientAddress,
+    amount: parseEther(amount).toString(),
+  }
 });
 
 const parse = (csv: string) => {
