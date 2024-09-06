@@ -4,22 +4,29 @@ import { TxBuilder } from "@morpho-labs/gnosis-tx-builder";
 import { ChangeEvent, useState } from "react";
 import Papa from "papaparse";
 import { parseEther, JsonRpcProvider, Contract, parseUnits } from "ethers";
-import { BatchFile, BatchTransaction } from "@morpho-labs/gnosis-tx-builder/lib/src/types";
+import {
+  BatchFile,
+  BatchTransaction,
+} from "@morpho-labs/gnosis-tx-builder/lib/src/types";
 
 type ERC20 = {
   address: string;
   decimals: BigInt;
   symbol: string;
-}
+};
 
 const safeAddress = "0xaA53161A1fD22b258c89bA76B4bA11019034612D";
-const rpcUrl = 'https://rpc.immutable.com'
+const rpcUrl = "https://rpc.immutable.com";
 
 const newErc20Contract = (contractAddress: string) =>
-    new Contract(contractAddress, [
+  new Contract(
+    contractAddress,
+    [
       "function decimals() view returns (uint8)",
       "function symbol() view returns (string)",
-    ], new JsonRpcProvider(rpcUrl));
+    ],
+    new JsonRpcProvider(rpcUrl)
+  );
 
 const buildNativeTransaction = (recipientAddress: string, value: string) => ({
   to: recipientAddress,
@@ -52,7 +59,7 @@ const buildERC20Transaction = (
   contractInputsValues: {
     to: recipientAddress,
     amount: parseUnits(amount, parseInt(erc20.decimals.toString())).toString(),
-  }
+  },
 });
 
 const parse = (csv: string) => {
@@ -65,11 +72,11 @@ const parse = (csv: string) => {
 const buildTransactions = (erc20: ERC20 | null, rows: [string, string][]) => {
   if (erc20) {
     return rows.map(([recipientAddress, amount]) =>
-      buildERC20Transaction(erc20, recipientAddress, amount)
+      buildERC20Transaction(erc20, recipientAddress.trim(), amount)
     );
   }
   return rows.map(([recipientAddress, amount]) =>
-    buildNativeTransaction(recipientAddress, amount)
+    buildNativeTransaction(recipientAddress.trim(), amount)
   );
 };
 
@@ -105,7 +112,7 @@ const createBatchJson = (file: File, erc20: ERC20 | null) => {
 
 export default function Home() {
   const [csvFile, setCsvFile] = useState<File | null>();
-  const [erc20, setErc20] = useState<ERC20|null>(null);
+  const [erc20, setErc20] = useState<ERC20 | null>(null);
 
   const handleErc20AddressChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.value) {
@@ -118,8 +125,8 @@ export default function Home() {
       contract.decimals() as Promise<BigInt>,
       contract.symbol() as Promise<string>,
     ]);
-    console.log({decimals, symbol})
-    setErc20({ address: e.target.value, decimals: decimals, symbol});
+    console.log({ decimals, symbol });
+    setErc20({ address: e.target.value, decimals: decimals, symbol });
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -130,7 +137,9 @@ export default function Home() {
   const handleClick = () => {
     if (!csvFile) return;
     createBatchJson(csvFile, erc20).then((file) => {
-      const blob = decodeURIComponent(encodeURIComponent(JSON.stringify(file, null, 2)));
+      const blob = decodeURIComponent(
+        encodeURIComponent(JSON.stringify(file, null, 2))
+      );
       const url = window.URL.createObjectURL(new Blob([blob]));
       const link = document.createElement("a");
       link.href = url;
@@ -141,7 +150,7 @@ export default function Home() {
 
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-  });
+    });
   };
 
   return (
@@ -154,7 +163,13 @@ export default function Home() {
         className="w-full"
       />
 
-      {erc20 ? <div>Detected: {erc20.symbol} / {erc20.decimals.toString()} decimals</div> : <div>Using Native IMX</div>}
+      {erc20 ? (
+        <div>
+          Detected: {erc20.symbol} / {erc20.decimals.toString()} decimals
+        </div>
+      ) : (
+        <div>Using Native IMX</div>
+      )}
       <label>CSV of the form: walletAddress,amount</label>
       <input onChange={handleFileChange} type="file" accept="text/csv" />
       <button
