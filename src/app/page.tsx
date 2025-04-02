@@ -3,22 +3,35 @@
 import { TxBuilder } from "@morpho-labs/gnosis-tx-builder";
 import { ChangeEvent, useState } from "react";
 import Papa from "papaparse";
-import { parseEther, JsonRpcProvider, Contract, parseUnits } from "ethers";
+import {
+  parseEther,
+  JsonRpcProvider,
+  Contract,
+  parseUnits,
+  isAddress,
+} from "ethers";
 import {
   BatchFile,
   BatchTransaction,
 } from "@morpho-labs/gnosis-tx-builder/lib/src/types";
 
+type Address = `0x${string}`;
+
 type ERC20 = {
-  address: string;
+  address: Address;
   decimals: BigInt;
   symbol: string;
 };
 
-const safeAddress = "0xaA53161A1fD22b258c89bA76B4bA11019034612D";
+type ValidateRowsResult = {
+  validRows: Array<[Address, string]>;
+  errors: Array<Error>;
+};
+
+const safeAddress: Address = "0xaA53161A1fD22b258c89bA76B4bA11019034612D";
 const rpcUrl = "https://rpc.immutable.com";
 
-const newErc20Contract = (contractAddress: string) =>
+const newErc20Contract = (contractAddress: Address) =>
   new Contract(
     contractAddress,
     [
@@ -28,14 +41,14 @@ const newErc20Contract = (contractAddress: string) =>
     new JsonRpcProvider(rpcUrl)
   );
 
-const buildNativeTransaction = (recipientAddress: string, value: string) => ({
+const buildNativeTransaction = (recipientAddress: Address, value: string) => ({
   to: recipientAddress,
   value: parseEther(value).toString(),
 });
 
 const buildERC20Transaction = (
   erc20: ERC20,
-  recipientAddress: string,
+  recipientAddress: Address,
   amount: string
 ): BatchTransaction => ({
   to: erc20.address,
@@ -69,14 +82,32 @@ const parse = (csv: string) => {
   return data;
 };
 
-const buildTransactions = (erc20: ERC20 | null, rows: [string, string][]) => {
+const buildTransactions = (erc20: ERC20 | null, rows: [Address, string][]) => {
   if (erc20) {
     return rows.map(([recipientAddress, amount]) =>
-      buildERC20Transaction(erc20, recipientAddress.trim(), amount)
+      buildERC20Transaction(erc20, recipientAddress, amount)
     );
   }
   return rows.map(([recipientAddress, amount]) =>
-    buildNativeTransaction(recipientAddress.trim(), amount)
+    buildNativeTransaction(recipientAddress, amount)
+  );
+};
+
+const isValidAddress = (address: string): address is Address =>
+  isAddress(address);
+
+const validateRows = (rows: [string, string][]): ValidateRowsResult => {
+  return rows.reduce<ValidateRowsResult>(
+    (acc, [recipientAddress, amount]) => {
+      const trimmedAddress = recipientAddress.trim();
+      if (!isValidAddress(trimmedAddress)) {
+        acc.errors.push(new Error(`Invalid wallet address: ${trimmedAddress}`));
+        return acc;
+      }
+      acc.validRows.push([trimmedAddress, amount]);
+      return acc;
+    },
+    { validRows: [], errors: [] }
   );
 };
 
@@ -97,7 +128,17 @@ const createBatchJson = (file: File, erc20: ERC20 | null) => {
       }
 
       const rows = parse(result);
-      const transactions = buildTransactions(erc20, rows);
+
+      const validateRowsResult = validateRows(rows);
+      if (validateRowsResult.errors.length > 0) {
+        reject(validateRowsResult.errors);
+        return;
+      }
+
+      const transactions = buildTransactions(
+        erc20,
+        validateRowsResult.validRows
+      );
 
       const batchJson = TxBuilder.batch(safeAddress, transactions, {
         chainId: 13371,
@@ -113,12 +154,14 @@ const createBatchJson = (file: File, erc20: ERC20 | null) => {
 export default function Home() {
   const [csvFile, setCsvFile] = useState<File | null>();
   const [erc20, setErc20] = useState<ERC20 | null>(null);
-
+  const [error, setError] = useState<string | null>(null);
   const handleErc20AddressChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.value) {
       setErc20(null);
       return;
     }
+
+    if (!isValidAddress(e.target.value)) return;
 
     const contract = newErc20Contract(e.target.value);
     const [decimals, symbol] = await Promise.all([
@@ -136,21 +179,30 @@ export default function Home() {
 
   const handleClick = () => {
     if (!csvFile) return;
-    createBatchJson(csvFile, erc20).then((file) => {
-      const blob = decodeURIComponent(
-        encodeURIComponent(JSON.stringify(file, null, 2))
-      );
-      const url = window.URL.createObjectURL(new Blob([blob]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "batch.json";
-      document.body.appendChild(link);
+    createBatchJson(csvFile, erc20)
+      .then((file) => {
+        const blob = decodeURIComponent(
+          encodeURIComponent(JSON.stringify(file, null, 2))
+        );
+        const url = window.URL.createObjectURL(new Blob([blob]));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "batch.json";
+        document.body.appendChild(link);
 
-      link.click();
+        link.click();
 
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    });
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      })
+      .catch((error) => {
+        console.error(error);
+        if (error instanceof Array) {
+          setError(error.map((e) => e.message).join("\n"));
+        } else {
+          setError(error.message);
+        }
+      });
   };
 
   return (
@@ -179,6 +231,7 @@ export default function Home() {
       >
         Transform
       </button>
+      {error ? <div className="text-red-500">{error}</div> : null}
     </main>
   );
 }
